@@ -1,0 +1,70 @@
+version: '2'
+
+services:
+  tf1:
+    image: tensorflow:1.3.0-gpu-py3
+    ports:
+      - "20022:22"
+      - "26006:6006"
+    expose:
+      - "2222"
+    devices:
+      - /dev/nvidia0
+      - /dev/nvidia1
+    command: bash -c "mkdir /var/run/sshd && /usr/sbin/sshd -D"
+    networks:
+      default:
+        aliases:
+          - tf1
+    restart: always
+
+  tf2:
+    image: tensorflow:1.3.0-gpu-py3
+    ports:
+      - "20023:22"
+      - "26007:6006"
+    expose:
+      - "2222"
+    devices:
+      - /dev/nvidia2
+      - /dev/nvidia3
+    command: bash -c "mkdir /var/run/sshd && /usr/sbin/sshd -D"
+    networks:
+      default:
+        aliases:
+          - tf2
+    restart: always
+
+  tf3:
+    image: tensorflow:1.3.0-gpu-py3
+    ports:
+      - "20024:22"
+      - "26008:6006"
+    expose:
+      - "2222"
+    devices:
+      - /dev/nvidia4
+      - /dev/nvidia5
+    command: bash -c "mkdir /var/run/sshd && /usr/sbin/sshd -D"
+    networks:
+      default:
+        aliases:
+          - tf3
+    restart: always
+
+  tf4:
+    image: tensorflow:1.3.0-gpu-py3
+    ports:
+      - "20025:22"
+      - "26009:6006"
+    expose:
+      - "2222"
+    devices:
+      - /dev/nvidia6
+      - /dev/nvidia7
+    command: bash -c "mkdir /var/run/sshd && /usr/sbin/sshd -D"
+    networks:
+      default:
+        aliases:
+          - tf4
+    restart: always
