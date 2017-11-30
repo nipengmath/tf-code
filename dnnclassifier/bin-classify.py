@@ -1,4 +1,7 @@
 import itertools
+import os
+
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 from sklearn.cross_validation import train_test_split
@@ -42,7 +45,7 @@ X_orgin = df.drop("positionmark_real", axis=1)
 # 划分训练集和测试集
 X_train, X_test, Y_train, Y_test = train_test_split(
     X_orgin.values, Y_orgin.values)
-print(X_train.shape, X_test.shape, Y_train.shape, Y_test.shape)
+print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
 
 # 归一化数据
 scaler = StandardScaler().fit(X_train)
@@ -96,7 +99,21 @@ def fcn():
     MODEL_SAVE_PATH = "e:/python/fc_model/"
     MODEL_NAME = "model.ckpt"
 
-    def next_batch(batch_size):
+    def next_batch(batch_size, train_step):
+        global shuffle_index, shuffle_X, shuffle_Y
+        if X_train.shape[0] != Y_train.shape[0]:
+            return X_train, Y_train
+        total_train_step = (X_train.shape[0] + batch_size - 1) // batch_size
+        shuffle_index = np.arange(0, X_train.shape[0])
+        shuffle_X, shuffle_Y = X_train, Y_train
+        if train_step % total_train_step == 0:
+            np.random.shuffle(shuffle_index)
+            shuffle_X = X_train[shuffle_index]
+            shuffle_Y = Y_train[shuffle_index]
+        train_step = train_step % total_train_step
+        start = train_step * batch_size
+        end = min((train_step + 1) * batch_size, X_train.shape[0])
+        return shuffle_X[start:end], shuffle_Y[start:end]
 
     def inference(x, hidden_unit, regularizer):
         def get_weight_variable(shape, regularizer):
@@ -108,7 +125,8 @@ def fcn():
             return weights
 
         layers_num = len(hidden_unit)
-        layers_unit = x.shape[1] + hidden_unit
+        layers_unit = [x.shape[1]] + hidden_unit
+
         layer = x
         for i in range(layers_num):
             with tf.variable_scope('layer' + str(i + 1)):
@@ -117,26 +135,30 @@ def fcn():
                 biases = tf.get_variable(
                     "biases", [layers_unit[i + 1]], initializer=tf.constant_initializer(0.0))
                 if i == layers_num - 1:
-                    layer = tf.matmul(weights, layer) + biases
+                    layer = tf.matmul(layer, weights) + biases
                 else:
-                    layer = tf.nn.relu(tf.matmul(weights, layer) + biases)
+                    layer = tf.nn.relu(tf.matmul(layer, weights) + biases)
         return layer
 
-    x = tf.placeholder(tf.float32, [BATCH_SIZE, INPUT_NODE], name="x-input")
-    y_ = tf.placeholder(tf.float32, [BATCH_SIZE, OUTPUT_NODE], name="y-input")
+    x = tf.placeholder(tf.float32, [None, INPUT_NODE], name="x-input")
+    y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name="y-input")
 
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
-    y = inference(x, regularizer)
+    y = inference(x, [100, OUTPUT_NODE], regularizer)
     global_step = tf.Variable(0, trainable=False)
 
     variable_averages = tf.train.ExponentialMovingAverage(
         MOVING_AVERAGE_DECAY, global_step)
     variable_averages_op = variable_averages.apply(tf.trainable_variables())
 
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
         labels=y_, logits=y)
     cross_entropy_mean = tf.reduce_mean(cross_entropy)
     loss = cross_entropy_mean + tf.add_n(tf.get_collection("losses"))
+    tf.summary.scalar('cross_entropy', loss)
+
+    correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
     learning_rate = tf.train.exponential_decay(
         LEARNING_RATE_BASE, global_step, X_train.shape[0] / BATCH_SIZE,
@@ -144,22 +166,35 @@ def fcn():
     train_step = tf.train.AdamOptimizer(
         learning_rate).minimize(loss, global_step=global_step)
 
-    with tf.control_dependencies([train_step, variables_averages_op]):
+    with tf.control_dependencies([train_step, variable_averages_op]):
         train_op = tf.no_op(name='train')
 
+    summary = tf.summary.merge_all()
+
     with tf.Session() as sess:
+        summary_writer = tf.summary.FileWriter(
+            os.path.join(MODEL_SAVE_PATH, MODEL_NAME), sess.graph)
         tf.global_variables_initializer().run()
         for i in range(TRAINING_STEPS):
-            xs, ys = next_batch(BATCH_SIZE)
+            xs, ys = next_batch(BATCH_SIZE, i)
             _, loss_value, step = sess.run(
                 [train_op, loss, global_step], feed_dict={x: xs, y_: ys})
+
+            if i % 100 == 0:
+                summary_str = sess.run(summary, feed_dict={x: xs, y_: ys})
+                summary_writer.add_summary(summary_str, step)
+                summary_writer.flush()
             if i % 1000 == 0:
-                print("After %d training step(s), "
-                      "loss on training batch is %g." % (
-                          step, loss_value))
-                saver.save(sess, os.path.join(MODEL_SAVE_PATH,
-                                              MODEL_NAME),
-                           global_step=global_step)
+                print("After %d training step(s), loss on training batch is %g." % (
+                    step, loss_value))
+                accuracy_score = sess.run(
+                    accuracy, feed_dict={x: X_test, y_: Y_test})
+                print("After %d training step(s), validation accuracy = %g" % (
+                    step, accuracy_score))
 
 
 fcn()
+
+
+# AttributeError: module 'pandas' has no attribute 'computation'
+# pip install --upgrade dask
