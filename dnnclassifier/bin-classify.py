@@ -7,55 +7,56 @@ import tensorflow as tf
 from sklearn.cross_validation import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-INPUT_DATA = "e:/python/室内室外预测数据集.xls"
 
-data = pd.read_excel(INPUT_DATA)
-# print(data.head())
-# print(data.columns)
+def input_data(excel_filename):
+    data = pd.read_excel(excel_filename)
+    # print(data.head())
+    # print(data.columns)
 
-# 分离x、y，且去掉最后一行
-df = data[["reportcellkey", 'strongestnbpci', 'aoa', 'ta_calc', 'rsrp', 'rsrq', 'ta',
-           'tadltvalue', 'mrtime', 'imsi', 'ndskey', 'uerecordid', 'starttime', 'endtime',
-           'positionmark_real']]
-df = df.drop([df.shape[0] - 1])
+    # 分离x、y，且去掉最后一行
+    df = data[["reportcellkey", 'strongestnbpci', 'aoa', 'ta_calc', 'rsrp', 'rsrq', 'ta',
+               'tadltvalue', 'mrtime', 'imsi', 'ndskey', 'uerecordid', 'starttime', 'endtime',
+               'positionmark_real']]
+    df = df.drop([df.shape[0] - 1])
 
-# 列处理
-# 1.去除第一列report id和第二列strongestnbpci（PCI为物理层小区编号，与预测室内室外无关）
-df = df.drop("reportcellkey", axis=1)
-df = df.drop("strongestnbpci", axis=1)
-# 2.去除路测时间mrtime
-df = df.drop("mrtime", axis=1)
-# 3.去除所有的同样值imsi和ndskey
-df = df.drop("imsi", axis=1)
-df = df.drop("ndskey", axis=1)
-# 4.去除userid
-df = df.drop("uerecordid", axis=1)
-# 5.归一成何时通话和童话时长，由于数据全部为2月份，所有只保留几点通话。
-df['duration'] = (df['endtime'] - df['starttime']).dt.total_seconds() / 60
-df['starttime'] = df['starttime'].dt.hour + df['starttime'].dt.minute / 60
-df = df.drop("endtime", axis=1)
-# 6.删除包含null数据的行
-df = df.dropna()
+    # 列处理
+    # 1.去除第一列report id和第二列strongestnbpci（PCI为物理层小区编号，与预测室内室外无关）
+    df = df.drop("reportcellkey", axis=1)
+    df = df.drop("strongestnbpci", axis=1)
+    # 2.去除路测时间mrtime
+    df = df.drop("mrtime", axis=1)
+    # 3.去除所有的同样值imsi和ndskey
+    df = df.drop("imsi", axis=1)
+    df = df.drop("ndskey", axis=1)
+    # 4.去除userid
+    df = df.drop("uerecordid", axis=1)
+    # 5.归一成何时通话和童话时长，由于数据全部为2月份，所有只保留几点通话。
+    df['duration'] = (df['endtime'] - df['starttime']).dt.total_seconds() / 60
+    df['starttime'] = df['starttime'].dt.hour + df['starttime'].dt.minute / 60
+    df = df.drop("endtime", axis=1)
+    # 6.删除包含null数据的行
+    df = df.dropna()
 
-Y_orgin = df[['positionmark_real']]
-X_orgin = df.drop("positionmark_real", axis=1)
-# print(X_orgin)
-# print(Y_orgin)
+    Y_orgin = df[['positionmark_real']]
+    X_orgin = df.drop("positionmark_real", axis=1)
+    # print(X_orgin)
+    # print(Y_orgin)
 
-# 划分训练集和测试集
-X_train, X_test, Y_train, Y_test = train_test_split(
-    X_orgin.values, Y_orgin.values)
-print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
+    # 划分训练集和测试集
+    X_train, X_test, Y_train, Y_test = train_test_split(
+        X_orgin.values, Y_orgin.values)
+    print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
 
-# 归一化数据
-scaler = StandardScaler().fit(X_train)
-# print(scaler.mean_, scaler.scale_)
-X_train = scaler.transform(X_train)
-X_test = scaler.transform(X_test)
-# print(X_train)
+    # 归一化数据
+    scaler = StandardScaler().fit(X_train)
+    # print(scaler.mean_, scaler.scale_)
+    X_train = scaler.transform(X_train)
+    X_test = scaler.transform(X_test)
+    # print(X_train)
+    return X_orgin, Y_orgin, X_train, Y_train, X_test, Y_test, scaler
 
 
-def estimator_dnn():
+def estimator_dnn(X_orgin, Y_orgin, X_train, Y_train, X_test, Y_test):
     # tf.logging.set_verbosity(tf.logging.INFO)
 
     # 定义COLUMNS
@@ -87,14 +88,14 @@ def estimator_dnn():
     print(ev)
 
 
-def fcn():
+def fcn(X_train, Y_train, X_test, Y_test):
     INPUT_NODE = X_train.shape[1]
-    OUTPUT_NODE = Y_train.shape[1]
+    OUTPUT_NODE = 2
     BATCH_SIZE = 100
-    LEARNING_RATE_BASE = 0.8
+    LEARNING_RATE_BASE = 0.1
     LEARNING_RATE_DECAY = 0.99
     REGULARIZATION_RATE = 0.0001
-    TRAINING_STEPS = 10000
+    TRAINING_STEPS = 50000
     MOVING_AVERAGE_DECAY = 0.99
     MODEL_SAVE_PATH = "e:/python/fc_model/"
     MODEL_NAME = "model.ckpt"
@@ -140,8 +141,11 @@ def fcn():
                     layer = tf.nn.relu(tf.matmul(layer, weights) + biases)
         return layer
 
+    Y_train = np.squeeze(Y_train)
+    Y_test = np.squeeze(Y_test)
+
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name="x-input")
-    y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name="y-input")
+    y_ = tf.placeholder(tf.int32, [None], name="y-input")
 
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
     y = inference(x, [100, OUTPUT_NODE], regularizer)
@@ -151,14 +155,16 @@ def fcn():
         MOVING_AVERAGE_DECAY, global_step)
     variable_averages_op = variable_averages.apply(tf.trainable_variables())
 
-    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
-        labels=y_, logits=y)
-    cross_entropy_mean = tf.reduce_mean(cross_entropy)
+    y_ = tf.to_int64(y_)
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        labels=y_, logits=y, name='xentropy')
+    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='xentropy_mean')
     loss = cross_entropy_mean + tf.add_n(tf.get_collection("losses"))
     tf.summary.scalar('cross_entropy', loss)
 
-    correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    correct = tf.nn.in_top_k(y, y_, 1)
+    accuracy = tf.reduce_sum(tf.cast(correct, tf.int32))
+
 
     learning_rate = tf.train.exponential_decay(
         LEARNING_RATE_BASE, global_step, X_train.shape[0] / BATCH_SIZE,
@@ -188,13 +194,19 @@ def fcn():
                 print("After %d training step(s), loss on training batch is %g." % (
                     step, loss_value))
                 accuracy_score = sess.run(
+                    accuracy, feed_dict={x: xs, y_: ys})
+                print("After %d training step(s), train accuracy = %g" % (
+                    step, accuracy_score/xs.shape[0]))
+                accuracy_score = sess.run(
                     accuracy, feed_dict={x: X_test, y_: Y_test})
-                print("After %d training step(s), validation accuracy = %g" % (
-                    step, accuracy_score))
+                print("After %d training step(s), valid accuracy = %g" % (
+                    step, accuracy_score/X_test.shape[0]))
 
 
-fcn()
-
+X_orgin, Y_orgin, X_train, Y_train, X_test, Y_test, scaler = input_data(
+    "e:/python/室内室外预测数据集.xls")
+# estimator_dnn(X_orgin, Y_orgin, X_train, Y_train, X_test, Y_test)
+fcn(X_train, Y_train, X_test, Y_test)
 
 # AttributeError: module 'pandas' has no attribute 'computation'
 # pip install --upgrade dask
